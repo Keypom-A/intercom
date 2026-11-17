@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>簡易インカム (合言葉P2P)</title>
-  <!-- 軽量シグナリング用 MQTT.js (CDN) -->
   <script src="https://unpkg.com"></script>
   <style>
     * {
@@ -31,13 +30,14 @@
       width: 100%;
       max-width: 400px;
       background: #1e1e1e;
-      padding: 10px 14px;
+      padding: 12px 14px;
       border-radius: 8px;
       font-size: 0.9rem;
       text-align: center;
       margin-bottom: 16px;
       border: 1px solid #333;
       line-height: 1.4;
+      word-break: break-word;
     }
     .status-connected {
       border-color: #00e676;
@@ -47,6 +47,10 @@
     .status-waiting {
       border-color: #ffab00;
       color: #ffab00;
+    }
+    .status-error {
+      border-color: #ff5252;
+      color: #ff5252;
     }
 
     /* 合言葉セットアップエリア */
@@ -89,6 +93,10 @@
       font-size: 1rem;
       font-weight: bold;
       cursor: pointer;
+      touch-action: manipulation;
+    }
+    .action-btn:active {
+      opacity: 0.8;
     }
     .action-btn:disabled {
       background: #444;
@@ -164,6 +172,7 @@
       border: 1px solid #555;
       border-radius: 6px;
       font-size: 0.85rem;
+      touch-action: manipulation;
     }
   </style>
 </head>
@@ -178,14 +187,14 @@
   <!-- 合言葉入力UI -->
   <div class="setup-container">
     <label for="passphrase">2人で同じ「合言葉」を入力してください</label>
-    <input type="text" id="passphrase" placeholder="例: hall-staff-01" autocomplete="off">
-    <button id="connectBtn" class="action-btn" onclick="startConnection()">マイク許可＆接続開始</button>
-    <button id="disconnectBtn" class="action-btn disconnect-btn" onclick="resetConnection()" style="display:none;">切断する</button>
+    <input type="text" id="passphrase" placeholder="例: hall-01" autocomplete="off">
+    <button type="button" id="connectBtn" class="action-btn">マイク許可＆接続開始</button>
+    <button type="button" id="disconnectBtn" class="action-btn disconnect-btn" style="display:none;">切断する</button>
   </div>
 
   <!-- プッシュ・トゥ・トーク（PTT）ボタン -->
   <div class="ptt-container">
-    <button id="pttButton" disabled>
+    <button type="button" id="pttButton" disabled>
       <span id="pttMainText">未接続</span>
       <span id="pttSubText" class="sub">接続後に押して通話</span>
     </button>
@@ -193,7 +202,7 @@
 
   <!-- iPhone Safari 音声再生保証用 -->
   <div class="controls">
-    <button class="small-btn" onclick="unlockAudio()">🔊 相手の声が聞こえない時はタップ</button>
+    <button type="button" id="unlockBtn" class="small-btn">🔊 相手の声が聞こえない時はタップ</button>
   </div>
 
   <!-- iOS Safari対策: playsinline と autoplay を必須指定 -->
@@ -207,7 +216,7 @@
     let topicName = '';
     const myId = 'peer_' + Math.random().toString(36).substring(2, 10);
     let isMakingOffer = false;
-    let polite = false; // 同時接続衝突（Glare）解決用フラグ
+    let polite = false;
 
     // GoogleのSTUNサーバー設定
     const rtcConfig = {
@@ -226,25 +235,34 @@
     const connectBtn = document.getElementById('connectBtn');
     const disconnectBtn = document.getElementById('disconnectBtn');
     const passphraseInput = document.getElementById('passphrase');
+    const unlockBtn = document.getElementById('unlockBtn');
 
     function updateStatus(text, type = 'normal') {
       statusBar.textContent = text;
-      statusBar.classList.remove('status-connected', 'status-waiting');
+      statusBar.classList.remove('status-connected', 'status-waiting', 'status-error');
       if (type === 'connected') statusBar.classList.add('status-connected');
       if (type === 'waiting') statusBar.classList.add('status-waiting');
+      if (type === 'error') statusBar.classList.add('status-error');
     }
 
-    // 合言葉をSHA-256でハッシュ化して他と被らないトピック名を生成
-    async function hashPassphrase(pass) {
-      const msgUint8 = new TextEncoder().encode('webrtc-ptt-intercom-' + pass.trim());
-      const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      return 'intercom/' + hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    // 合言葉を安全な部屋IDに変換（全ブラウザ対応）
+    function makeTopicName(pass) {
+      const str = 'webrtc-ptt-room-' + pass.trim();
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) - hash) + str.charCodeAt(i);
+        hash |= 0;
+      }
+      return 'intercom_v1/' + Math.abs(hash).toString(16) + '_' + encodeURIComponent(pass.trim());
     }
 
     // マイク初期化（エコーキャンセル有効）
     async function initMicrophone() {
       if (localStream) return true;
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        updateStatus('🔴 エラー: このブラウザはマイク機能に対応していません（HTTPSで開いていますか？）', 'error');
+        return false;
+      }
       try {
         localStream = await navigator.mediaDevices.getUserMedia({
           audio: {
@@ -254,11 +272,14 @@
           },
           video: false
         });
-        audioTrack = localStream.getAudioTracks();
-        audioTrack.enabled = false;
+        const tracks = localStream.getAudioTracks();
+        if (tracks.length > 0) {
+          audioTrack = tracks[0];
+          audioTrack.enabled = false; // 最初はミュート
+        }
         return true;
       } catch (err) {
-        alert('マイクの使用が許可されませんでした。設定を確認してください。\nエラー: ' + err.message);
+        updateStatus('🔴 マイク許可エラー: ' + err.message, 'error');
         return false;
       }
     }
@@ -275,13 +296,14 @@
       });
 
       peerConnection.ontrack = (event) => {
-        if (remoteAudio.srcObject !== event.streams) {
-          remoteAudio.srcObject = event.streams;
-          remoteAudio.play().catch(e => console.log('自動再生待機:', e));
+        if (event.streams && event.streams[0]) {
+          if (remoteAudio.srcObject !== event.streams[0]) {
+            remoteAudio.srcObject = event.streams[0];
+            remoteAudio.play().catch(() => {});
+          }
         }
       };
 
-      // ICE候補が見つかるたびに相手へ送信（Trickle ICEで高速接続）
       peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
           sendSignal({ type: 'candidate', candidate: event.candidate });
@@ -293,13 +315,12 @@
         if (state === 'connected') {
           updateStatus('🟢 通話可能（P2P直接接続完了）', 'connected');
           enablePTT();
-          // P2Pが確立したら仲介サーバー（MQTT）は切断して省電力化
           if (mqttClient) {
             mqttClient.end();
             mqttClient = null;
           }
         } else if (state === 'disconnected' || state === 'failed') {
-          updateStatus('🔴 接続が切れました。再接続してください。');
+          updateStatus('🔴 接続が切れました。再接続してください。', 'error');
           disablePTT();
         }
       };
@@ -312,47 +333,25 @@
       }
     }
 
-    // 合言葉での接続開始
+    // 接続開始処理
     async function startConnection() {
       const pass = passphraseInput.value.trim();
       if (!pass) {
-        alert('合言葉を入力してください。');
+        updateStatus('⚠️ 合言葉を入力してからボタンを押してください', 'error');
+        passphraseInput.focus();
+        return;
+      }
+
+      if (typeof mqtt === 'undefined') {
+        updateStatus('🔴 エラー: 通信ライブラリの読み込みに失敗しました。再読み込みしてください。', 'error');
         return;
       }
 
       unlockAudio();
+      updateStatus('🟡 マイクの許可を確認中...', 'waiting');
+
       const micOk = await initMicrophone();
       if (!micOk) return;
 
       connectBtn.disabled = true;
       passphraseInput.disabled = true;
-      disconnectBtn.style.display = 'block';
-      updateStatus('🟡 相手を探しています...（相手も接続を押してください）', 'waiting');
-
-      topicName = await hashPassphrase(pass);
-      setupPeerConnection();
-
-      // 無料パブリックMQTTブローカー（WSS）に接続
-      mqttClient = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
-        clientId: myId,
-        clean: true,
-        connectTimeout: 5000
-      });
-
-      mqttClient.on('connect', () => {
-        mqttClient.subscribe(topicName, (err) => {
-          if (!err) {
-            // 入室を通知
-            sendSignal({ type: 'join' });
-          }
-        });
-      });
-
-      mqttClient.on('message', async (topic, message) => {
-        if (topic !== topicName) return;
-        let data;
-        try {
-          data = JSON.parse(message.toString());
-        } catch (e) {
-          return;
-        }
