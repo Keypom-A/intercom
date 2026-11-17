@@ -1,0 +1,266 @@
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>簡易インカム (PTT)</title>
+  <script src="https://unpkg.com"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      background-color: #1a1a1a;
+      color: #ffffff;
+      text-align: center;
+      margin: 0;
+      padding: 20px;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    h1 { font-size: 1.4rem; margin-bottom: 10px; }
+    .box {
+      background: #2c2c2c;
+      padding: 15px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+    }
+    input {
+      font-size: 1.1rem;
+      padding: 10px;
+      width: 60%;
+      border-radius: 5px;
+      border: none;
+      text-align: center;
+    }
+    button.join-btn {
+      font-size: 1.1rem;
+      padding: 10px 20px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    button.join-btn:disabled { background-color: #555; }
+    #status { margin-top: 10px; font-size: 0.9rem; color: #aaa; }
+    #members { margin-top: 5px; font-size: 0.9rem; color: #4caf50; }
+    
+    /* PTT（通話ボタン）のデザイン */
+    #ptt-btn {
+      width: 220px;
+      height: 220px;
+      border-radius: 50%;
+      background-color: #444;
+      color: #ccc;
+      font-size: 1.5rem;
+      font-weight: bold;
+      border: 6px solid #666;
+      margin: 30px auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      touch-action: manipulation;
+      box-shadow: 0 6px 15px rgba(0,0,0,0.5);
+    }
+    #ptt-btn.ready {
+      background-color: #2e7d32;
+      color: white;
+      border-color: #4caf50;
+    }
+    #ptt-btn.talking {
+      background-color: #d32f2f;
+      color: white;
+      border-color: #ff5252;
+      transform: scale(0.96);
+    }
+  </style>
+</head>
+<body>
+
+  <h1>現場用 簡易インカム</h1>
+
+  <div class="box">
+    <p style="margin-top:0; font-size:0.9rem;">全員で同じ「合言葉（英数字）」を入れて入室</p>
+    <input type="text" id="room-id" placeholder="例: hall2026" autocomplete="off">
+    <button class="join-btn" id="join-btn" onclick="joinRoom()">入室</button>
+    <div id="status">未接続</div>
+    <div id="members"></div>
+  </div>
+
+  <div id="ptt-btn">入室してください</div>
+  <p style="font-size: 0.85rem; color: #888;">※ボタンを押している間だけ声が届きます<br>※最初はマイクの許可を求められます</p>
+
+  <div id="audio-container"></div>
+
+  <script>
+    const MAX_SLOTS = 5; // 最大5人まで同じ部屋に入れる設定
+    let myStream = null;
+    let peer = null;
+    let roomName = "";
+    let connectedPeers = new Set();
+
+    const statusEl = document.getElementById('status');
+    const membersEl = document.getElementById('members');
+    const pttBtn = document.getElementById('ptt-btn');
+    const joinBtn = document.getElementById('join-btn');
+    const roomInput = document.getElementById('room-id');
+
+    // GoogleのSTUNサーバーを設定（フリーWi-Fi越え対策）
+    const peerConfig = {
+      config: {
+        iceServers: [
+          { urls: 'stun:://google.com' },
+          { urls: 'stun:://google.com' }
+        ]
+      }
+    };
+
+    async function joinRoom() {
+      roomName = roomInput.value.trim().replace(/[^a-zA-Z0-9_-]/g, '');
+      if (!roomName) {
+        alert("半角英数字で合言葉を入力してください");
+        return;
+      }
+
+      joinBtn.disabled = true;
+      roomInput.disabled = true;
+      statusEl.innerText = "マイクを準備中...";
+
+      try {
+        // マイク取得（エコーキャンセル・ノイズ抑制ON）
+        myStream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true },
+          video: false
+        });
+        // 初期状態はミュート（PTTのため）
+        setMute(true);
+      } catch (err) {
+        alert("マイクの使用が許可されませんでした。ブラウザの設定を確認してください。");
+        joinBtn.disabled = false;
+        roomInput.disabled = false;
+        statusEl.innerText = "エラー: マイク許可なし";
+        return;
+      }
+
+      statusEl.innerText = "空きスロットを探しています...";
+      trySlot(1);
+    }
+
+    // 1番〜5番の空き番号を自動取得して入室する仕組み
+    function trySlot(slot) {
+      if (slot > MAX_SLOTS) {
+        statusEl.innerText = "満員です（最大" + MAX_SLOTS + "人）";
+        return;
+      }
+
+      const myId = `intercom-${roomName}-${slot}`;
+      const tempPeer = new Peer(myId, peerConfig);
+
+      tempPeer.on('open', (id) => {
+        peer = tempPeer;
+        statusEl.innerText = `入室完了（あなたの番号: ${slot}番）`;
+        setupPeerEvents();
+        setupPTT();
+        // 他の番号（1〜5）に既にいる人へ発信してメッシュ接続
+        for (let i = 1; i <= MAX_SLOTS; i++) {
+          if (i !== slot) {
+            connectToPeer(`intercom-${roomName}-${i}`);
+          }
+        }
+      });
+
+      tempPeer.on('error', (err) => {
+        if (err.type === 'unavailable-id') {
+          // その番号が既に使われていたら次の番号を試す
+          tempPeer.destroy();
+          trySlot(slot + 1);
+        } else {
+          console.error(err);
+        }
+      });
+    }
+
+    function setupPeerEvents() {
+      // 他の人からの着信を受ける
+      peer.on('call', (call) => {
+        call.answer(myStream);
+        handleCall(call);
+      });
+    }
+
+    function connectToPeer(targetId) {
+      const call = peer.call(targetId, myStream);
+      if (call) {
+        handleCall(call);
+      }
+    }
+
+    function handleCall(call) {
+      call.on('stream', (remoteStream) => {
+        if (!connectedPeers.has(call.peer)) {
+          connectedPeers.add(call.peer);
+          updateMemberCount();
+
+          const audio = document.createElement('audio');
+          audio.srcObject = remoteStream;
+          audio.autoplay = true;
+          audio.playsInline = true; // iPhone Safari対策
+          audio.id = `audio-${call.peer}`;
+          document.getElementById('audio-container').appendChild(audio);
+        }
+      });
+
+      call.on('close', () => removePeer(call.peer));
+      call.on('error', () => removePeer(call.peer));
+    }
+
+    function removePeer(peerId) {
+      connectedPeers.delete(peerId);
+      const audio = document.getElementById(`audio-${peerId}`);
+      if (audio) audio.remove();
+      updateMemberCount();
+    }
+
+    function updateMemberCount() {
+      membersEl.innerText = `現在の通話相手: ${connectedPeers.size}人`;
+    }
+
+    function setMute(isMuted) {
+      if (myStream) {
+        myStream.getAudioTracks().forEach(track => {
+          track.enabled = !isMuted;
+        });
+      }
+    }
+
+    function setupPTT() {
+      pttBtn.classList.add('ready');
+      pttBtn.innerText = "押して話す";
+
+      const startTalking = (e) => {
+        e.preventDefault();
+        setMute(false);
+        pttBtn.classList.remove('ready');
+        pttBtn.classList.add('talking');
+        pttBtn.innerText = "送信中...";
+      };
+
+      const stopTalking = (e) => {
+        e.preventDefault();
+        setMute(true);
+        pttBtn.classList.remove('talking');
+        pttBtn.classList.add('ready');
+        pttBtn.innerText = "押して話す";
+      };
+
+      // スマホのタッチ操作とPCのマウス操作の両方に対応
+      pttBtn.addEventListener('touchstart', startTalking, { passive: false });
+      pttBtn.addEventListener('touchend', stopTalking, { passive: false });
+      pttBtn.addEventListener('touchcancel', stopTalking, { passive: false });
+      pttBtn.addEventListener('mousedown', startTalking);
+      pttBtn.addEventListener('mouseup', stopTalking);
+      pttBtn.addEventListener('mouseleave', stopTalking);
+    }
+  </script>
+</body>
+</html>
