@@ -1,238 +1,346 @@
 let peer;
 let call;
+
 let localStream;
-let audioTrack;
 
-const statusEl = document.getElementById("status");
-const pttBtn = document.getElementById("ptt");
-const remoteAudio = document.getElementById("remoteAudio");
+let audioContext;
+let gainNode;
+let destination;
 
-function setStatus(text) {
-    statusEl.textContent = text;
-    console.log(text);
+const statusEl =
+document.getElementById("status");
+
+const pttBtn =
+document.getElementById("ptt");
+
+const unlockBtn =
+document.getElementById("unlockBtn");
+
+const remoteAudio =
+document.getElementById("remoteAudio");
+
+function status(text){
+
+console.log(text);
+
+statusEl.textContent =
+text;
 }
 
-async function unlockAudio() {
-    try {
-        await remoteAudio.play();
-    } catch (e) {
-        console.log("Audio unlock待機");
-    }
-}
+async function setupMic(){
 
-document.body.addEventListener(
-    "touchstart",
-    unlockAudio,
-    { once: true }
+if(localStream)
+return;
+
+const rawStream =
+await navigator.mediaDevices.getUserMedia({
+
+audio:{
+echoCancellation:true,
+noiseSuppression:true,
+autoGainControl:true
+},
+
+video:false
+
+});
+
+audioContext =
+new (
+window.AudioContext ||
+window.webkitAudioContext
+)();
+
+const source =
+audioContext
+.createMediaStreamSource(
+rawStream
 );
 
-async function setupMic() {
+gainNode =
+audioContext
+.createGain();
 
-    if (localStream) return;
+gainNode.gain.value = 0;
 
-    localStream =
-        await navigator.mediaDevices.getUserMedia({
-            audio: {
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true
-            },
-            video: false
-        });
+destination =
+audioContext
+.createMediaStreamDestination();
 
-    audioTrack =
-        localStream.getAudioTracks()[0];
+source.connect(
+gainNode
+);
 
-    // 一旦ON
-    audioTrack.enabled = true;
+gainNode.connect(
+destination
+);
 
-    console.log("Mic OK");
+localStream =
+destination.stream;
+
 }
 
-function enablePTT() {
+unlockBtn.addEventListener(
 
-    if (!audioTrack) return;
+"click",
 
-    audioTrack.enabled = false;
+async ()=>{
 
-    pttBtn.disabled = false;
+try{
 
-    setStatus("接続完了");
+if(audioContext){
+
+await audioContext.resume();
+
 }
 
-function setupCall(callObj) {
+await remoteAudio.play();
 
-    call = callObj;
+status(
+"音声初期化完了"
+);
 
-    call.on("stream", async (remoteStream) => {
+}catch(err){
 
-        console.log("REMOTE STREAM OK");
+console.error(err);
 
-        remoteAudio.srcObject = remoteStream;
+}
 
-        try {
-            await remoteAudio.play();
-            console.log("再生開始");
-        } catch (err) {
-            console.error(err);
-            alert(
-                "音声再生エラー\n画面をタップしてから再度試してください"
-            );
-        }
+}
+);
 
-        enablePTT();
-    });
+function setupCall(target){
 
-    call.on("close", () => {
-        setStatus("接続終了");
-    });
+call = target;
 
-    call.on("error", (err) => {
-        console.error(err);
-        setStatus("通話エラー");
-    });
+call.on(
+
+"stream",
+
+async remoteStream=>{
+
+console.log(
+"REMOTE STREAM"
+);
+
+remoteAudio.srcObject =
+remoteStream;
+
+try{
+
+await remoteAudio.play();
+
+status(
+"接続完了"
+);
+
+}catch(err){
+
+console.error(err);
+
+status(
+"再生エラー"
+);
+
+}
+
+pttBtn.disabled =
+false;
+
+}
+);
+
+call.on(
+"close",
+()=>status("切断")
+);
+
+call.on(
+"error",
+err=>{
+
+console.error(err);
+
+status("通話エラー");
+
+}
+);
+
 }
 
 document
 .getElementById("hostBtn")
-.addEventListener("click", async () => {
+.addEventListener(
 
-    const room =
-        document.getElementById("roomId")
-        .value
-        .trim();
+"click",
 
-    if (!room) {
-        alert("ルームIDを入力してください");
-        return;
-    }
+async ()=>{
 
-    try {
+const room =
+document
+.getElementById("roomId")
+.value
+.trim();
 
-        await setupMic();
+if(!room){
 
-        peer = new Peer(room);
+alert("ルームID");
 
-        peer.on("open", () => {
-            setStatus(
-                "待機中 : " + room
-            );
-        });
+return;
 
-        peer.on("call", (incoming) => {
+}
 
-            incoming.answer(localStream);
+await setupMic();
 
-            setupCall(incoming);
-        });
+peer =
+new Peer(room);
 
-        peer.on("error", (err) => {
-            console.error(err);
-            setStatus(
-                "Peerエラー: " + err.type
-            );
-        });
+peer.on(
+"open",
+()=>status("待機中")
+);
 
-    } catch (err) {
+peer.on(
+"call",
+incoming=>{
 
-        console.error(err);
+incoming.answer(
+localStream
+);
 
-        setStatus(
-            "マイク取得失敗"
-        );
-    }
-});
+setupCall(
+incoming
+);
+
+}
+);
+
+peer.on(
+"error",
+err=>{
+
+console.error(err);
+
+status(
+err.type
+);
+
+}
+);
+
+}
+);
 
 document
 .getElementById("joinBtn")
-.addEventListener("click", async () => {
+.addEventListener(
 
-    const room =
-        document.getElementById("roomId")
-        .value
-        .trim();
+"click",
 
-    if (!room) {
-        alert("ルームIDを入力してください");
-        return;
-    }
+async ()=>{
 
-    try {
+const room =
+document
+.getElementById("roomId")
+.value
+.trim();
 
-        await setupMic();
+if(!room){
 
-        peer = new Peer();
+alert("ルームID");
 
-        peer.on("open", () => {
+return;
 
-            setStatus(
-                "接続中..."
-            );
-
-            const outgoing =
-                peer.call(
-                    room,
-                    localStream
-                );
-
-            setupCall(outgoing);
-        });
-
-        peer.on("error", (err) => {
-            console.error(err);
-            setStatus(
-                "Peerエラー: " + err.type
-            );
-        });
-
-    } catch (err) {
-
-        console.error(err);
-
-        setStatus(
-            "接続失敗"
-        );
-    }
-});
-
-function startTalk() {
-
-    if (!audioTrack) return;
-
-    audioTrack.enabled = true;
-
-    pttBtn.classList.add("talking");
-
-    setStatus("送信中...");
 }
 
-function stopTalk() {
+await setupMic();
 
-    if (!audioTrack) return;
+peer =
+new Peer();
 
-    audioTrack.enabled = false;
+peer.on(
+"open",
+()=>{
 
-    pttBtn.classList.remove("talking");
+const outgoing =
+peer.call(
+room,
+localStream
+);
 
-    setStatus("接続完了");
+setupCall(
+outgoing
+);
+
+}
+);
+
+peer.on(
+"error",
+err=>{
+
+console.error(err);
+
+status(
+err.type
+);
+
+}
+);
+
+}
+);
+
+function startTalk(){
+
+if(!gainNode)
+return;
+
+gainNode.gain.value = 1;
+
+pttBtn.classList.add(
+"talking"
+);
+
+status(
+"送信中"
+);
+
+}
+
+function stopTalk(){
+
+if(!gainNode)
+return;
+
+gainNode.gain.value = 0;
+
+pttBtn.classList.remove(
+"talking"
+);
+
+status(
+"接続完了"
+);
+
 }
 
 pttBtn.addEventListener(
-    "pointerdown",
-    startTalk
+"pointerdown",
+startTalk
 );
 
 pttBtn.addEventListener(
-    "pointerup",
-    stopTalk
+"pointerup",
+stopTalk
 );
 
 pttBtn.addEventListener(
-    "pointercancel",
-    stopTalk
+"pointerleave",
+stopTalk
 );
 
 pttBtn.addEventListener(
-    "pointerleave",
-    stopTalk
+"pointercancel",
+stopTalk
 );
