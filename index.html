@@ -1,4 +1,22 @@
 
+
+コンテンツへ
+Gmail でのスクリーン リーダーの使用
+Gmail のデスクトップ通知を有効にしてください。
+   OK  いいえ
+1 / 149
+（件名なし）
+受信トレイ
+
+HARUKI ABE <halkey.pom@gmail.com>
+添付ファイル
+20:48 (0 分前)
+To 自分
+
+ 1 個の添付ファイル
+  •  Gmail によってスキャン済み
+Intercom.txt
+100%
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -45,7 +63,6 @@
     #status { margin-top: 10px; font-size: 0.9rem; color: #aaa; }
     #members { margin-top: 5px; font-size: 0.9rem; color: #4caf50; }
     
-    /* PTT（通話ボタン）のデザイン */
     #ptt-btn {
       width: 220px;
       height: 220px;
@@ -93,7 +110,7 @@
   <div id="audio-container"></div>
 
   <script>
-    const MAX_SLOTS = 5; // 最大5人まで同じ部屋に入れる設定
+    const MAX_SLOTS = 6;
     let myStream = null;
     let peer = null;
     let roomName = "";
@@ -105,8 +122,8 @@
     const joinBtn = document.getElementById('join-btn');
     const roomInput = document.getElementById('room-id');
 
-    // GoogleのSTUNサーバーを設定（フリーWi-Fi越え対策）
     const peerConfig = {
+      debug: 2,
       config: {
         iceServers: [
           { urls: 'stun:://google.com' },
@@ -127,12 +144,10 @@
       statusEl.innerText = "マイクを準備中...";
 
       try {
-        // マイク取得（エコーキャンセル・ノイズ抑制ON）
         myStream = await navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation: true, noiseSuppression: true },
           video: false
         });
-        // 初期状態はミュート（PTTのため）
         setMute(true);
       } catch (err) {
         alert("マイクの使用が許可されませんでした。ブラウザの設定を確認してください。");
@@ -142,46 +157,55 @@
         return;
       }
 
-      statusEl.innerText = "空きスロットを探しています...";
+      statusEl.innerText = "サーバーに接続中...";
       trySlot(1);
     }
 
-    // 1番〜5番の空き番号を自動取得して入室する仕組み
     function trySlot(slot) {
       if (slot > MAX_SLOTS) {
         statusEl.innerText = "満員です（最大" + MAX_SLOTS + "人）";
+        joinBtn.disabled = false;
+        roomInput.disabled = false;
         return;
       }
 
-      const myId = `intercom-${roomName}-${slot}`;
+      const myId = `ic-${roomName}-${slot}`;
       const tempPeer = new Peer(myId, peerConfig);
 
+      // 5秒応答がなければタイムアウト表示
+      const timeout = setTimeout(() => {
+        if (!peer) {
+          statusEl.innerText = "接続に時間がかかっています...再読み込みして試してください";
+        }
+      }, 5000);
+
       tempPeer.on('open', (id) => {
+        clearTimeout(timeout);
         peer = tempPeer;
-        statusEl.innerText = `入室完了（あなたの番号: ${slot}番）`;
+        statusEl.innerText = `入室完了（番号: ${slot}番）`;
         setupPeerEvents();
         setupPTT();
-        // 他の番号（1〜5）に既にいる人へ発信してメッシュ接続
         for (let i = 1; i <= MAX_SLOTS; i++) {
           if (i !== slot) {
-            connectToPeer(`intercom-${roomName}-${i}`);
+            connectToPeer(`ic-${roomName}-${i}`);
           }
         }
       });
 
       tempPeer.on('error', (err) => {
+        clearTimeout(timeout);
         if (err.type === 'unavailable-id') {
-          // その番号が既に使われていたら次の番号を試す
           tempPeer.destroy();
           trySlot(slot + 1);
         } else {
-          console.error(err);
+          statusEl.innerText = `エラー: ${err.type}（再読み込みしてください）`;
+          joinBtn.disabled = false;
+          roomInput.disabled = false;
         }
       });
     }
 
     function setupPeerEvents() {
-      // 他の人からの着信を受ける
       peer.on('call', (call) => {
         call.answer(myStream);
         handleCall(call);
@@ -204,7 +228,7 @@
           const audio = document.createElement('audio');
           audio.srcObject = remoteStream;
           audio.autoplay = true;
-          audio.playsInline = true; // iPhone Safari対策
+          audio.playsInline = true;
           audio.id = `audio-${call.peer}`;
           document.getElementById('audio-container').appendChild(audio);
         }
@@ -253,7 +277,6 @@
         pttBtn.innerText = "押して話す";
       };
 
-      // スマホのタッチ操作とPCのマウス操作の両方に対応
       pttBtn.addEventListener('touchstart', startTalking, { passive: false });
       pttBtn.addEventListener('touchend', stopTalking, { passive: false });
       pttBtn.addEventListener('touchcancel', stopTalking, { passive: false });
@@ -261,6 +284,12 @@
       pttBtn.addEventListener('mouseup', stopTalking);
       pttBtn.addEventListener('mouseleave', stopTalking);
     }
+
+    // ページを閉じる時に自分の番号を解放する
+    window.addEventListener('beforeunload', () => {
+      if (peer) peer.destroy();
+    });
   </script>
 </body>
 </html>
+Intercom.txt を表示しています。
