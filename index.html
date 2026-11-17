@@ -3,274 +3,352 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>簡易インカム (PTT)</title>
-  <script src="https://unpkg.com"></script>
+  <title>簡易インカム (P2Pトランシーバー)</title>
   <style>
-    body {
-      font-family: sans-serif;
-      background-color: #1a1a1a;
-      color: #ffffff;
-      text-align: center;
-      margin: 0;
-      padding: 20px;
-      user-select: none;
-      -webkit-user-select: none;
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
     }
-    h1 { font-size: 1.4rem; margin-bottom: 10px; }
-    .box {
-      background: #2c2c2c;
-      padding: 15px;
-      border-radius: 10px;
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #121212;
+      color: #ffffff;
+      margin: 0;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+    }
+    h1 {
+      font-size: 1.2rem;
+      margin: 0 0 12px 0;
+      color: #e0e0e0;
+    }
+    .status-bar {
+      width: 100%;
+      max-width: 400px;
+      background: #1e1e1e;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      text-align: center;
+      margin-bottom: 16px;
+      border: 1px solid #333;
+    }
+    .status-connected {
+      border-color: #00e676;
+      color: #00e676;
+      font-weight: bold;
+    }
+
+    /* 接続セットアップエリア */
+    .setup-container {
+      width: 100%;
+      max-width: 400px;
+      background: #1e1e1e;
+      padding: 16px;
+      border-radius: 12px;
       margin-bottom: 20px;
     }
-    input {
-      font-size: 1.1rem;
-      padding: 10px;
-      width: 60%;
-      border-radius: 5px;
-      border: none;
-      text-align: center;
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
     }
-    button.join-btn {
-      font-size: 1.1rem;
-      padding: 10px 20px;
-      background-color: #007bff;
-      color: white;
+    .tab-btn {
+      flex: 1;
+      padding: 10px;
+      background: #2c2c2c;
+      color: #aaa;
       border: none;
-      border-radius: 5px;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      font-weight: bold;
       cursor: pointer;
     }
-    button.join-btn:disabled { background-color: #555; }
-    #status { margin-top: 10px; font-size: 0.9rem; color: #aaa; }
-    #members { margin-top: 5px; font-size: 0.9rem; color: #4caf50; }
-    
-    #ptt-btn {
+    .tab-btn.active {
+      background: #2979ff;
+      color: #fff;
+    }
+    .step-box {
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .step-box.active {
+      display: flex;
+    }
+    label {
+      font-size: 0.85rem;
+      color: #bbb;
+    }
+    textarea {
+      width: 100%;
+      height: 68px;
+      background: #121212;
+      color: #00e676;
+      border: 1px solid #444;
+      border-radius: 6px;
+      padding: 8px;
+      font-size: 0.75rem;
+      font-family: monospace;
+      resize: none;
+    }
+    .action-btn {
+      padding: 12px;
+      background: #2979ff;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.95rem;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .action-btn:disabled {
+      background: #444;
+      color: #888;
+      cursor: not-allowed;
+    }
+    .copy-btn {
+      background: #00897b;
+    }
+
+    /* プッシュ・トゥ・トーク（PTT）エリア */
+    .ptt-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      width: 100%;
+      margin: 10px 0;
+    }
+    #pttButton {
       width: 220px;
       height: 220px;
       border-radius: 50%;
-      background-color: #444;
-      color: #ccc;
-      font-size: 1.5rem;
+      border: 8px solid #333;
+      background: radial-gradient(circle, #2c2c2c 0%, #1a1a1a 100%);
+      color: #888;
+      font-size: 1.2rem;
       font-weight: bold;
-      border: 6px solid #666;
-      margin: 30px auto;
       display: flex;
-      align-items: center;
+      flex-direction: column;
       justify-content: center;
-      touch-action: manipulation;
-      box-shadow: 0 6px 15px rgba(0,0,0,0.5);
+      align-items: center;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.6);
+      transition: transform 0.08s, border-color 0.15s, background 0.15s;
     }
-    #ptt-btn.ready {
-      background-color: #2e7d32;
-      color: white;
-      border-color: #4caf50;
+    #pttButton.ready {
+      border-color: #2979ff;
+      color: #ffffff;
+      cursor: pointer;
     }
-    #ptt-btn.talking {
-      background-color: #d32f2f;
-      color: white;
-      border-color: #ff5252;
-      transform: scale(0.96);
+    #pttButton.talking {
+      transform: scale(0.95);
+      border-color: #ff1744;
+      background: radial-gradient(circle, #d50000 0%, #8e0000 100%);
+      color: #ffffff;
+      box-shadow: 0 0 30px rgba(255, 23, 68, 0.6);
+    }
+    #pttButton span.sub {
+      font-size: 0.8rem;
+      font-weight: normal;
+      margin-top: 6px;
+      opacity: 0.8;
+    }
+
+    /* 音量設定・オーディオ解除 */
+    .controls {
+      width: 100%;
+      max-width: 400px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .small-btn {
+      padding: 8px 12px;
+      background: #333;
+      color: #fff;
+      border: 1px solid #555;
+      border-radius: 6px;
+      font-size: 0.8rem;
+    }
+    .hidden {
+      display: none !important;
     }
   </style>
 </head>
 <body>
 
-  <h1>現場用 簡易インカム</h1>
+  <h1>🎙️ 簡易インカム (P2P)</h1>
 
-  <div class="box">
-    <p style="margin-top:0; font-size:0.9rem;">全員で同じ「合言葉（英数字）」を入れて入室</p>
-    <input type="text" id="room-id" placeholder="例: hall2026" autocomplete="off">
-    <button class="join-btn" id="join-btn" onclick="joinRoom()">入室</button>
-    <div id="status">未接続</div>
-    <div id="members"></div>
+  <div id="statusBar" class="status-bar">
+    状態: 未接続（上の手順で接続してください）
   </div>
 
-  <div id="ptt-btn">入室してください</div>
-  <p style="font-size: 0.85rem; color: #888;">※ボタンを押している間だけ声が届きます<br>※最初はマイクの許可を求められます</p>
+  <!-- 接続セットアップUI -->
+  <div id="setupContainer" class="setup-container">
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('host')">① 親機（招待を作る）</button>
+      <button class="tab-btn" onclick="switchTab('guest')">② 子機（招待を受ける）</button>
+    </div>
 
-  <div id="audio-container"></div>
+    <!-- 親機（Offer側） -->
+    <div id="hostPanel" class="step-box active">
+      <button id="createOfferBtn" class="action-btn" onclick="createOffer()">1. マイク許可＆招待コード作成</button>
+      
+      <label>2. この「招待コード」をコピーして相手に送る</label>
+      <textarea id="offerOutput" readonly placeholder="上のボタンを押すとコードが生成されます..."></textarea>
+      <button class="action-btn copy-btn" onclick="copyText('offerOutput')">招待コードをコピー</button>
+
+      <label>3. 相手から返ってきた「返答コード」を貼り付け</label>
+      <textarea id="answerInput" placeholder="相手の返答コードをここに貼り付け..."></textarea>
+      <button id="connectAnswerBtn" class="action-btn" onclick="acceptAnswer()">4. 接続完了する</button>
+    </div>
+
+    <!-- 子機（Answer側） -->
+    <div id="guestPanel" class="step-box">
+      <label>1. 相手から届いた「招待コード」を貼り付け</label>
+      <textarea id="offerInput" placeholder="親機の招待コードをここに貼り付け..."></textarea>
+      <button id="createAnswerBtn" class="action-btn" onclick="createAnswer()">2. マイク許可＆返答コード作成</button>
+
+      <label>3. この「返答コード」をコピーして相手に送り返す</label>
+      <textarea id="answerOutput" readonly placeholder="上のボタンを押すと返答コードが生成されます..."></textarea>
+      <button class="action-btn copy-btn" onclick="copyText('answerOutput')">返答コードをコピー</button>
+    </div>
+  </div>
+
+  <!-- プッシュ・トゥ・トーク（PTT）ボタン -->
+  <div class="ptt-container">
+    <button id="pttButton" disabled>
+      <span id="pttMainText">未接続</span>
+      <span id="pttSubText" class="sub">接続後に押して通話</span>
+    </button>
+  </div>
+
+  <!-- iPhone Safari 音声再生保証用＆再接続用コントロール -->
+  <div class="controls">
+    <button class="small-btn" onclick="unlockAudio()">🔊 相手の声が聞こえない時はタップ</button>
+    <button class="small-btn" onclick="toggleSetup()">⚙️ 接続画面を表示/隠す</button>
+  </div>
+
+  <!-- iOS Safari対策: playsinline と autoplay を必須指定 -->
+  <audio id="remoteAudio" autoplay playsinline></audio>
 
   <script>
-    const MAX_SLOTS = 6;
-    let myStream = null;
-    let peer = null;
-    let roomName = "";
-    let connectedPeers = new Set();
+    let peerConnection = null;
+    let localStream = null;
+    let audioTrack = null;
 
-    const statusEl = document.getElementById('status');
-    const membersEl = document.getElementById('members');
-    const pttBtn = document.getElementById('ptt-btn');
-    const joinBtn = document.getElementById('join-btn');
-    const roomInput = document.getElementById('room-id');
-
-    const peerConfig = {
-      debug: 2,
-      config: {
-        iceServers: [
-          { urls: 'stun:://google.com' },
-          { urls: 'stun:://google.com' }
-        ]
-      }
+    // GoogleのSTUNサーバー設定（公共Wi-Fi等のNAT越え用）
+    const rtcConfig = {
+      iceServers: [
+        { urls: 'stun:://google.com' },
+        { urls: 'stun:://google.com' },
+        { urls: 'stun:://google.com' }
+      ]
     };
 
-    async function joinRoom() {
-      roomName = roomInput.value.trim().replace(/[^a-zA-Z0-9_-]/g, '');
-      if (!roomName) {
-        alert("半角英数字で合言葉を入力してください");
-        return;
+    const statusBar = document.getElementById('statusBar');
+    const pttButton = document.getElementById('pttButton');
+    const pttMainText = document.getElementById('pttMainText');
+    const pttSubText = document.getElementById('pttSubText');
+    const remoteAudio = document.getElementById('remoteAudio');
+
+    // タブ切り替え
+    function switchTab(role) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.step-box').forEach(p => p.classList.remove('active'));
+      if (role === 'host') {
+        document.querySelectorAll('.tab-btn')[0].classList.add('active');
+        document.getElementById('hostPanel').classList.add('active');
+      } else {
+        document.querySelectorAll('.tab-btn')[1].classList.add('active');
+        document.getElementById('guestPanel').classList.add('active');
       }
+    }
 
-      joinBtn.disabled = true;
-      roomInput.disabled = true;
-      statusEl.innerText = "マイクを準備中...";
+    function toggleSetup() {
+      document.getElementById('setupContainer').classList.toggle('hidden');
+    }
 
+    function updateStatus(text, isConnected = false) {
+      statusBar.textContent = text;
+      if (isConnected) {
+        statusBar.classList.add('status-connected');
+      } else {
+        statusBar.classList.remove('status-connected');
+      }
+    }
+
+    // マイクの初期化（エコーキャンセル・ノイズ抑制有効）
+    async function initMicrophone() {
+      if (localStream) return true;
       try {
-        myStream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true },
+        localStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          },
           video: false
         });
-        setMute(true);
+        audioTrack = localStream.getAudioTracks()[0];
+        // 初期状態はミュート（プッシュ・トゥ・トークのため）
+        audioTrack.enabled = false;
+        return true;
       } catch (err) {
-        alert("マイクの使用が許可されませんでした。ブラウザの設定を確認してください。");
-        joinBtn.disabled = false;
-        roomInput.disabled = false;
-        statusEl.innerText = "エラー: マイク許可なし";
-        return;
+        alert('マイクの使用が許可されませんでした。ブラウザの設定を確認してください。\nエラー: ' + err.message);
+        return false;
       }
-
-      statusEl.innerText = "サーバーに接続中...";
-      trySlot(1);
     }
 
-    function trySlot(slot) {
-      if (slot > MAX_SLOTS) {
-        statusEl.innerText = "満員です（最大" + MAX_SLOTS + "人）";
-        joinBtn.disabled = false;
-        roomInput.disabled = false;
-        return;
+    // WebRTCピア接続の初期化
+    function createPeerConnection() {
+      if (peerConnection) {
+        peerConnection.close();
       }
+      peerConnection = new RTCPeerConnection(rtcConfig);
 
-      const myId = `ic-${roomName}-${slot}`;
-      const tempPeer = new Peer(myId, peerConfig);
-
-      // 5秒応答がなければタイムアウト表示
-      const timeout = setTimeout(() => {
-        if (!peer) {
-          statusEl.innerText = "接続に時間がかかっています...再読み込みして試してください";
-        }
-      }, 5000);
-
-      tempPeer.on('open', (id) => {
-        clearTimeout(timeout);
-        peer = tempPeer;
-        statusEl.innerText = `入室完了（番号: ${slot}番）`;
-        setupPeerEvents();
-        setupPTT();
-        for (let i = 1; i <= MAX_SLOTS; i++) {
-          if (i !== slot) {
-            connectToPeer(`ic-${roomName}-${i}`);
-          }
-        }
+      // 自分の音声トラックを追加
+      localStream.getTracks().forEach(track => {
+        peerConnection.addTrack(track, localStream);
       });
 
-      tempPeer.on('error', (err) => {
-        clearTimeout(timeout);
-        if (err.type === 'unavailable-id') {
-          tempPeer.destroy();
-          trySlot(slot + 1);
+      // 相手の音声を受信した時の処理
+      peerConnection.ontrack = (event) => {
+        if (remoteAudio.srcObject !== event.streams[0]) {
+          remoteAudio.srcObject = event.streams[0];
+          remoteAudio.play().catch(e => console.log('自動再生ブロック待機:', e));
+        }
+      };
+
+      // 接続状態の監視
+      peerConnection.onconnectionstatechange = () => {
+        const state = peerConnection.connectionState;
+        if (state === 'connected') {
+          updateStatus('🟢 通話可能（P2P接続完了）', true);
+          enablePTT();
+          document.getElementById('setupContainer').classList.add('hidden');
+        } else if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+          updateStatus('🔴 切断されました（再接続が必要です）', false);
+          disablePTT();
+        }
+      };
+    }
+
+    // ICE候補の収集完了を待つ（サーバーレスで1回でコピペ完了させるため）
+    function waitForIceGathering(pc) {
+      return new Promise((resolve) => {
+        if (pc.iceGatheringState === 'complete') {
+          resolve();
         } else {
-          statusEl.innerText = `エラー: ${err.type}（再読み込みしてください）`;
-          joinBtn.disabled = false;
-          roomInput.disabled = false;
-        }
-      });
-    }
-
-    function setupPeerEvents() {
-      peer.on('call', (call) => {
-        call.answer(myStream);
-        handleCall(call);
-      });
-    }
-
-    function connectToPeer(targetId) {
-      const call = peer.call(targetId, myStream);
-      if (call) {
-        handleCall(call);
-      }
-    }
-
-    function handleCall(call) {
-      call.on('stream', (remoteStream) => {
-        if (!connectedPeers.has(call.peer)) {
-          connectedPeers.add(call.peer);
-          updateMemberCount();
-
-          const audio = document.createElement('audio');
-          audio.srcObject = remoteStream;
-          audio.autoplay = true;
-          audio.playsInline = true;
-          audio.id = `audio-${call.peer}`;
-          document.getElementById('audio-container').appendChild(audio);
-        }
-      });
-
-      call.on('close', () => removePeer(call.peer));
-      call.on('error', () => removePeer(call.peer));
-    }
-
-    function removePeer(peerId) {
-      connectedPeers.delete(peerId);
-      const audio = document.getElementById(`audio-${peerId}`);
-      if (audio) audio.remove();
-      updateMemberCount();
-    }
-
-    function updateMemberCount() {
-      membersEl.innerText = `現在の通話相手: ${connectedPeers.size}人`;
-    }
-
-    function setMute(isMuted) {
-      if (myStream) {
-        myStream.getAudioTracks().forEach(track => {
-          track.enabled = !isMuted;
-        });
-      }
-    }
-
-    function setupPTT() {
-      pttBtn.classList.add('ready');
-      pttBtn.innerText = "押して話す";
-
-      const startTalking = (e) => {
-        e.preventDefault();
-        setMute(false);
-        pttBtn.classList.remove('ready');
-        pttBtn.classList.add('talking');
-        pttBtn.innerText = "送信中...";
-      };
-
-      const stopTalking = (e) => {
-        e.preventDefault();
-        setMute(true);
-        pttBtn.classList.remove('talking');
-        pttBtn.classList.add('ready');
-        pttBtn.innerText = "押して話す";
-      };
-
-      pttBtn.addEventListener('touchstart', startTalking, { passive: false });
-      pttBtn.addEventListener('touchend', stopTalking, { passive: false });
-      pttBtn.addEventListener('touchcancel', stopTalking, { passive: false });
-      pttBtn.addEventListener('mousedown', startTalking);
-      pttBtn.addEventListener('mouseup', stopTalking);
-      pttBtn.addEventListener('mouseleave', stopTalking);
-    }
-
-    // ページを閉じる時に自分の番号を解放する
-    window.addEventListener('beforeunload', () => {
-      if (peer) peer.destroy();
-    });
-  </script>
-</body>
-</html>
-Intercom.txt を表示しています。
+          const checkState = () => {
+            if (pc.iceGatheringState === 'complete') {
