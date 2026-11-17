@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>簡易インカム (P2Pトランシーバー)</title>
+  <title>簡易インカム (合言葉P2P)</title>
+  <!-- 軽量シグナリング用 MQTT.js (CDN) -->
+  <script src="https://unpkg.com"></script>
   <style>
     * {
       box-sizing: border-box;
@@ -35,73 +37,56 @@
       text-align: center;
       margin-bottom: 16px;
       border: 1px solid #333;
+      line-height: 1.4;
     }
     .status-connected {
       border-color: #00e676;
       color: #00e676;
       font-weight: bold;
     }
+    .status-waiting {
+      border-color: #ffab00;
+      color: #ffab00;
+    }
 
-    /* 接続セットアップエリア */
+    /* 合言葉セットアップエリア */
     .setup-container {
       width: 100%;
       max-width: 400px;
       background: #1e1e1e;
-      padding: 16px;
+      padding: 18px;
       border-radius: 12px;
       margin-bottom: 20px;
-    }
-    .tabs {
       display: flex;
-      gap: 8px;
-      margin-bottom: 16px;
-    }
-    .tab-btn {
-      flex: 1;
-      padding: 10px;
-      background: #2c2c2c;
-      color: #aaa;
-      border: none;
-      border-radius: 6px;
-      font-size: 0.9rem;
-      font-weight: bold;
-      cursor: pointer;
-    }
-    .tab-btn.active {
-      background: #2979ff;
-      color: #fff;
-    }
-    .step-box {
-      display: none;
       flex-direction: column;
-      gap: 10px;
-    }
-    .step-box.active {
-      display: flex;
+      gap: 12px;
     }
     label {
       font-size: 0.85rem;
       color: #bbb;
     }
-    textarea {
+    input[type="text"] {
       width: 100%;
-      height: 68px;
+      padding: 12px;
       background: #121212;
-      color: #00e676;
+      color: #ffffff;
       border: 1px solid #444;
-      border-radius: 6px;
-      padding: 8px;
-      font-size: 0.75rem;
-      font-family: monospace;
-      resize: none;
+      border-radius: 8px;
+      font-size: 1.1rem;
+      text-align: center;
+      letter-spacing: 0.05em;
+    }
+    input[type="text"]:focus {
+      outline: none;
+      border-color: #2979ff;
     }
     .action-btn {
-      padding: 12px;
+      padding: 14px;
       background: #2979ff;
       color: white;
       border: none;
-      border-radius: 6px;
-      font-size: 0.95rem;
+      border-radius: 8px;
+      font-size: 1rem;
       font-weight: bold;
       cursor: pointer;
     }
@@ -110,8 +95,9 @@
       color: #888;
       cursor: not-allowed;
     }
-    .copy-btn {
-      background: #00897b;
+    .disconnect-btn {
+      background: #c62828;
+      margin-top: 4px;
     }
 
     /* プッシュ・トゥ・トーク（PTT）エリア */
@@ -162,67 +148,39 @@
       opacity: 0.8;
     }
 
-    /* 音量設定・オーディオ解除 */
+    /* 下部コントロール */
     .controls {
       width: 100%;
       max-width: 400px;
       display: flex;
-      justify-content: space-between;
-      align-items: center;
+      justify-content: center;
       gap: 10px;
       margin-top: 12px;
     }
     .small-btn {
-      padding: 8px 12px;
+      padding: 10px 14px;
       background: #333;
       color: #fff;
       border: 1px solid #555;
       border-radius: 6px;
-      font-size: 0.8rem;
-    }
-    .hidden {
-      display: none !important;
+      font-size: 0.85rem;
     }
   </style>
 </head>
 <body>
 
-  <h1>🎙️ 簡易インカム (P2P)</h1>
+  <h1>🎙️ 簡易インカム (合言葉P2P)</h1>
 
   <div id="statusBar" class="status-bar">
-    状態: 未接続（上の手順で接続してください）
+    状態: 未接続（合言葉を入れて接続）
   </div>
 
-  <!-- 接続セットアップUI -->
-  <div id="setupContainer" class="setup-container">
-    <div class="tabs">
-      <button class="tab-btn active" onclick="switchTab('host')">① 親機（招待を作る）</button>
-      <button class="tab-btn" onclick="switchTab('guest')">② 子機（招待を受ける）</button>
-    </div>
-
-    <!-- 親機（Offer側） -->
-    <div id="hostPanel" class="step-box active">
-      <button id="createOfferBtn" class="action-btn" onclick="createOffer()">1. マイク許可＆招待コード作成</button>
-      
-      <label>2. この「招待コード」をコピーして相手に送る</label>
-      <textarea id="offerOutput" readonly placeholder="上のボタンを押すとコードが生成されます..."></textarea>
-      <button class="action-btn copy-btn" onclick="copyText('offerOutput')">招待コードをコピー</button>
-
-      <label>3. 相手から返ってきた「返答コード」を貼り付け</label>
-      <textarea id="answerInput" placeholder="相手の返答コードをここに貼り付け..."></textarea>
-      <button id="connectAnswerBtn" class="action-btn" onclick="acceptAnswer()">4. 接続完了する</button>
-    </div>
-
-    <!-- 子機（Answer側） -->
-    <div id="guestPanel" class="step-box">
-      <label>1. 相手から届いた「招待コード」を貼り付け</label>
-      <textarea id="offerInput" placeholder="親機の招待コードをここに貼り付け..."></textarea>
-      <button id="createAnswerBtn" class="action-btn" onclick="createAnswer()">2. マイク許可＆返答コード作成</button>
-
-      <label>3. この「返答コード」をコピーして相手に送り返す</label>
-      <textarea id="answerOutput" readonly placeholder="上のボタンを押すと返答コードが生成されます..."></textarea>
-      <button class="action-btn copy-btn" onclick="copyText('answerOutput')">返答コードをコピー</button>
-    </div>
+  <!-- 合言葉入力UI -->
+  <div class="setup-container">
+    <label for="passphrase">2人で同じ「合言葉」を入力してください</label>
+    <input type="text" id="passphrase" placeholder="例: hall-staff-01" autocomplete="off">
+    <button id="connectBtn" class="action-btn" onclick="startConnection()">マイク許可＆接続開始</button>
+    <button id="disconnectBtn" class="action-btn disconnect-btn" onclick="resetConnection()" style="display:none;">切断する</button>
   </div>
 
   <!-- プッシュ・トゥ・トーク（PTT）ボタン -->
@@ -233,10 +191,9 @@
     </button>
   </div>
 
-  <!-- iPhone Safari 音声再生保証用＆再接続用コントロール -->
+  <!-- iPhone Safari 音声再生保証用 -->
   <div class="controls">
     <button class="small-btn" onclick="unlockAudio()">🔊 相手の声が聞こえない時はタップ</button>
-    <button class="small-btn" onclick="toggleSetup()">⚙️ 接続画面を表示/隠す</button>
   </div>
 
   <!-- iOS Safari対策: playsinline と autoplay を必須指定 -->
@@ -246,8 +203,13 @@
     let peerConnection = null;
     let localStream = null;
     let audioTrack = null;
+    let mqttClient = null;
+    let topicName = '';
+    const myId = 'peer_' + Math.random().toString(36).substring(2, 10);
+    let isMakingOffer = false;
+    let polite = false; // 同時接続衝突（Glare）解決用フラグ
 
-    // GoogleのSTUNサーバー設定（公共Wi-Fi等のNAT越え用）
+    // GoogleのSTUNサーバー設定
     const rtcConfig = {
       iceServers: [
         { urls: 'stun:://google.com' },
@@ -261,34 +223,26 @@
     const pttMainText = document.getElementById('pttMainText');
     const pttSubText = document.getElementById('pttSubText');
     const remoteAudio = document.getElementById('remoteAudio');
+    const connectBtn = document.getElementById('connectBtn');
+    const disconnectBtn = document.getElementById('disconnectBtn');
+    const passphraseInput = document.getElementById('passphrase');
 
-    // タブ切り替え
-    function switchTab(role) {
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('.step-box').forEach(p => p.classList.remove('active'));
-      if (role === 'host') {
-        document.querySelectorAll('.tab-btn')[0].classList.add('active');
-        document.getElementById('hostPanel').classList.add('active');
-      } else {
-        document.querySelectorAll('.tab-btn')[1].classList.add('active');
-        document.getElementById('guestPanel').classList.add('active');
-      }
-    }
-
-    function toggleSetup() {
-      document.getElementById('setupContainer').classList.toggle('hidden');
-    }
-
-    function updateStatus(text, isConnected = false) {
+    function updateStatus(text, type = 'normal') {
       statusBar.textContent = text;
-      if (isConnected) {
-        statusBar.classList.add('status-connected');
-      } else {
-        statusBar.classList.remove('status-connected');
-      }
+      statusBar.classList.remove('status-connected', 'status-waiting');
+      if (type === 'connected') statusBar.classList.add('status-connected');
+      if (type === 'waiting') statusBar.classList.add('status-waiting');
     }
 
-    // マイクの初期化（エコーキャンセル・ノイズ抑制有効）
+    // 合言葉をSHA-256でハッシュ化して他と被らないトピック名を生成
+    async function hashPassphrase(pass) {
+      const msgUint8 = new TextEncoder().encode('webrtc-ptt-intercom-' + pass.trim());
+      const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      return 'intercom/' + hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    // マイク初期化（エコーキャンセル有効）
     async function initMicrophone() {
       if (localStream) return true;
       try {
@@ -300,55 +254,105 @@
           },
           video: false
         });
-        audioTrack = localStream.getAudioTracks()[0];
-        // 初期状態はミュート（プッシュ・トゥ・トークのため）
+        audioTrack = localStream.getAudioTracks();
         audioTrack.enabled = false;
         return true;
       } catch (err) {
-        alert('マイクの使用が許可されませんでした。ブラウザの設定を確認してください。\nエラー: ' + err.message);
+        alert('マイクの使用が許可されませんでした。設定を確認してください。\nエラー: ' + err.message);
         return false;
       }
     }
 
-    // WebRTCピア接続の初期化
-    function createPeerConnection() {
+    // WebRTCピア接続の構築
+    function setupPeerConnection() {
       if (peerConnection) {
         peerConnection.close();
       }
       peerConnection = new RTCPeerConnection(rtcConfig);
 
-      // 自分の音声トラックを追加
       localStream.getTracks().forEach(track => {
         peerConnection.addTrack(track, localStream);
       });
 
-      // 相手の音声を受信した時の処理
       peerConnection.ontrack = (event) => {
-        if (remoteAudio.srcObject !== event.streams[0]) {
-          remoteAudio.srcObject = event.streams[0];
-          remoteAudio.play().catch(e => console.log('自動再生ブロック待機:', e));
+        if (remoteAudio.srcObject !== event.streams) {
+          remoteAudio.srcObject = event.streams;
+          remoteAudio.play().catch(e => console.log('自動再生待機:', e));
         }
       };
 
-      // 接続状態の監視
+      // ICE候補が見つかるたびに相手へ送信（Trickle ICEで高速接続）
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          sendSignal({ type: 'candidate', candidate: event.candidate });
+        }
+      };
+
       peerConnection.onconnectionstatechange = () => {
         const state = peerConnection.connectionState;
         if (state === 'connected') {
-          updateStatus('🟢 通話可能（P2P接続完了）', true);
+          updateStatus('🟢 通話可能（P2P直接接続完了）', 'connected');
           enablePTT();
-          document.getElementById('setupContainer').classList.add('hidden');
-        } else if (state === 'disconnected' || state === 'failed' || state === 'closed') {
-          updateStatus('🔴 切断されました（再接続が必要です）', false);
+          // P2Pが確立したら仲介サーバー（MQTT）は切断して省電力化
+          if (mqttClient) {
+            mqttClient.end();
+            mqttClient = null;
+          }
+        } else if (state === 'disconnected' || state === 'failed') {
+          updateStatus('🔴 接続が切れました。再接続してください。');
           disablePTT();
         }
       };
     }
 
-    // ICE候補の収集完了を待つ（サーバーレスで1回でコピペ完了させるため）
-    function waitForIceGathering(pc) {
-      return new Promise((resolve) => {
-        if (pc.iceGatheringState === 'complete') {
-          resolve();
-        } else {
-          const checkState = () => {
-            if (pc.iceGatheringState === 'complete') {
+    function sendSignal(payload) {
+      if (mqttClient && mqttClient.connected) {
+        payload.sender = myId;
+        mqttClient.publish(topicName, JSON.stringify(payload));
+      }
+    }
+
+    // 合言葉での接続開始
+    async function startConnection() {
+      const pass = passphraseInput.value.trim();
+      if (!pass) {
+        alert('合言葉を入力してください。');
+        return;
+      }
+
+      unlockAudio();
+      const micOk = await initMicrophone();
+      if (!micOk) return;
+
+      connectBtn.disabled = true;
+      passphraseInput.disabled = true;
+      disconnectBtn.style.display = 'block';
+      updateStatus('🟡 相手を探しています...（相手も接続を押してください）', 'waiting');
+
+      topicName = await hashPassphrase(pass);
+      setupPeerConnection();
+
+      // 無料パブリックMQTTブローカー（WSS）に接続
+      mqttClient = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
+        clientId: myId,
+        clean: true,
+        connectTimeout: 5000
+      });
+
+      mqttClient.on('connect', () => {
+        mqttClient.subscribe(topicName, (err) => {
+          if (!err) {
+            // 入室を通知
+            sendSignal({ type: 'join' });
+          }
+        });
+      });
+
+      mqttClient.on('message', async (topic, message) => {
+        if (topic !== topicName) return;
+        let data;
+        try {
+          data = JSON.parse(message.toString());
+        } catch (e) {
+          return;
+        }
