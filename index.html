@@ -3,69 +3,27 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+
 <title>School Intercom MVP</title>
 
+<link rel="stylesheet" href="style.css">
+
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-
-<style>
-
-body{
-    margin:0;
-    background:#121212;
-    color:white;
-    font-family:sans-serif;
-    text-align:center;
-    padding:20px;
-}
-
-input{
-    width:90%;
-    max-width:300px;
-    padding:12px;
-    margin:8px;
-    border-radius:8px;
-    border:none;
-}
-
-button{
-    padding:14px 20px;
-    margin:6px;
-    border:none;
-    border-radius:8px;
-    font-size:16px;
-}
-
-#ptt{
-    width:220px;
-    height:220px;
-    border-radius:50%;
-    background:#444;
-    color:white;
-    font-size:24px;
-}
-
-#ptt.talking{
-    background:#d50000;
-}
-
-</style>
+<script defer src="app.js"></script>
 </head>
+
 <body>
 
-<h2>🎙 School Intercom MVP</h2>
+<h1>🎙 School Intercom MVP</h1>
 
-<div>
+<div class="card">
 
-<input id="myId"
-placeholder="自分の名前">
-
-<br>
-
-<input id="roomId"
+<input
+id="roomId"
+type="text"
 placeholder="ルームID">
 
-<br>
-
+<div class="btnRow">
 <button id="hostBtn">
 ルーム作成
 </button>
@@ -73,194 +31,27 @@ placeholder="ルームID">
 <button id="joinBtn">
 接続
 </button>
+</div>
 
 </div>
 
-<p id="status">
+<div id="status" class="status">
 未接続
-</p>
+</div>
+
+<button id="unlockBtn">
+🔊 音声有効化
+</button>
 
 <button id="ptt" disabled>
 PTT
 </button>
 
-<audio id="remoteAudio" autoplay playsinline></audio>
-
-<script>
-
-let peer;
-let call;
-let localStream;
-let audioTrack;
-
-const statusEl =
-document.getElementById("status");
-
-const pttBtn =
-document.getElementById("ptt");
-
-const remoteAudio =
-document.getElementById("remoteAudio");
-
-async function setupMic(){
-
-localStream =
-await navigator.mediaDevices.getUserMedia({
-audio:true,
-video:false
-});
-
-audioTrack =
-localStream.getAudioTracks()[0];
-
-audioTrack.enabled = false;
-
-}
-
-function setStatus(text){
-statusEl.textContent=text;
-}
-
-document
-.getElementById("hostBtn")
-.onclick = async ()=>{
-
-await setupMic();
-
-const room =
-document
-.getElementById("roomId")
-.value
-.trim();
-
-peer =
-new Peer(room);
-
-peer.on("open",()=>{
-
-setStatus(
-"ルーム待機中: "+room
-);
-
-});
-
-peer.on("call",(incoming)=>{
-
-call = incoming;
-
-call.answer(localStream);
-
-call.on("stream",(remote)=>{
-
-remoteAudio.srcObject =
-remote;
-
-setStatus("接続完了");
-
-enablePTT();
-
-});
-
-});
-
-};
-
-document
-.getElementById("joinBtn")
-.onclick = async ()=>{
-
-await setupMic();
-
-const room =
-document
-.getElementById("roomId")
-.value
-.trim();
-
-peer =
-new Peer();
-
-peer.on("open",()=>{
-
-call =
-peer.call(
-room,
-localStream
-);
-
-call.on(
-"stream",
-
-(remote)=>{
-
-remoteAudio.srcObject =
-remote;
-
-setStatus("接続完了");
-
-enablePTT();
-
-});
-
-});
-
-};
-
-function enablePTT(){
-
-pttBtn.disabled=false;
-
-}
-
-function startTalk(){
-
-if(audioTrack){
-
-audioTrack.enabled=true;
-
-pttBtn.classList.add(
-"talking"
-);
-
-}
-
-}
-
-function stopTalk(){
-
-if(audioTrack){
-
-audioTrack.enabled=false;
-
-pttBtn.classList.remove(
-"talking"
-);
-
-}
-
-}
-
-pttBtn.addEventListener(
-"pointerdown",
-startTalk
-);
-
-pttBtn.addEventListener(
-"pointerup",
-stopTalk
-);
-
-pttBtn.addEventListener(
-"pointercancel",
-stopTalk
-);
-
-pttBtn.addEventListener(
-"pointerleave",
-stopTalk
-);
-
-</script>
+<audio
+id="remoteAudio"
+autoplay
+playsinline>
+</audio>
 
 </body>
 </html>
